@@ -35,7 +35,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -182,13 +181,6 @@ fun GlassCard(
 ) {
     Column(
         modifier = modifier
-            .shadow(
-                elevation = 22.dp,
-                shape = shape,
-                clip = false,
-                ambientColor = glow.copy(alpha = 0.42f),
-                spotColor = glow.copy(alpha = 0.45f),
-            )
             .clip(shape)
             .background(
                 Brush.verticalGradient(
@@ -227,13 +219,6 @@ fun PrimaryButton(
     Row(
         modifier = modifier
             .heightIn(min = 58.dp)
-            .shadow(
-                elevation = if (enabled) 20.dp else 0.dp,
-                shape = shape,
-                clip = false,
-                ambientColor = CronosBlue.copy(alpha = 0.6f),
-                spotColor = CronosCyan.copy(alpha = 0.45f),
-            )
             .clip(shape)
             .background(
                 if (enabled) {

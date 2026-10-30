@@ -1,11 +1,11 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::io;
 use std::os::fd::AsRawFd;
 use std::path::Path;
 
 pub use super::unix::{
     allocated_bytes, apply_mode, create_new_no_follow, create_symlink, name_problem,
-    open_exclusive, open_existing_no_follow, path_len, same_filesystem, sync_dir,
+    open_existing_no_follow, path_len, same_filesystem, sync_dir,
 };
 
 /// Android still caps a path at `PATH_MAX` bytes; `.hatchzip-part` is added
@@ -15,6 +15,26 @@ pub const MAX_PATH_LEN: usize = 4095 - ".hatchzip-part".len();
 /// Android storage is usually FUSE (emulated storage) or an SD card, where
 /// `syncfs` is not dependable. Each file and folder is flushed instead.
 pub const SYNC_EACH_FILE: bool = true;
+
+/// FUSE-backed shared storage often has no `flock`, returning `ENOSYS`
+/// (function not implemented). The lock is advisory, so carry on without it
+/// there instead of failing the whole extraction.
+pub fn open_exclusive(path: &Path) -> io::Result<File> {
+    let file = fs::OpenOptions::new().read(true).write(true).open(path)?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(fs::TryLockError::WouldBlock) => Err(io::ErrorKind::WouldBlock.into()),
+        Err(fs::TryLockError::Error(e))
+            if matches!(
+                e.raw_os_error(),
+                Some(libc::ENOSYS | libc::EOPNOTSUPP | libc::EINVAL)
+            ) || e.kind() == io::ErrorKind::Unsupported =>
+        {
+            Ok(file)
+        }
+        Err(fs::TryLockError::Error(e)) => Err(e),
+    }
+}
 
 pub fn sync_batch(output: &Path) -> io::Result<()> {
     File::open(output)?.sync_all()
