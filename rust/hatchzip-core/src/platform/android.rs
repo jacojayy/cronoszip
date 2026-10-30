@@ -32,7 +32,7 @@ pub fn punch_hole(file: &File, offset: u64, len: u64) -> io::Result<bool> {
     };
     loop {
         let mode = libc::FALLOC_FL_PUNCH_HOLE | libc::FALLOC_FL_KEEP_SIZE;
-        if unsafe { libc::fallocate(file.as_raw_fd(), mode, off, len) } == 0 {
+        if unsafe { libc::fallocate64(file.as_raw_fd(), mode, off, len) } == 0 {
             return Ok(true);
         }
         let e = io::Error::last_os_error();
