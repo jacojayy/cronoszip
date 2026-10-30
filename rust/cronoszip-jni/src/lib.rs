@@ -12,7 +12,6 @@ use anyhow::{bail, Context, Result};
 use hatchzip_core::archive::storage::Reads;
 use hatchzip_core::archive::{self, Item, Kind};
 use hatchzip_core::engine::{self, Outcome, Progress, Run};
-use hatchzip_core::journal::Journal;
 use hatchzip_core::replace;
 use hatchzip_core::restore;
 use hatchzip_core::session::{self, State};
@@ -550,17 +549,17 @@ fn extract_inner(
             (job, journal)
         }
         State::Fresh(job, out) => {
-            if let Some(reason) = job.in_place_refusal()
-                && !cfg.keep_archive
-            {
-                return Err(EngineError::new(
-                    "IN_PLACE_REFUSED",
-                    format!(
-                        "{reason}. Enable \"Keep archive\" to extract this archive without \
-                         shrinking it."
-                    ),
-                    json!({ "saved": false }),
-                ));
+            if !cfg.keep_archive {
+                if let Some(reason) = job.in_place_refusal() {
+                    return Err(EngineError::new(
+                        "IN_PLACE_REFUSED",
+                        format!(
+                            "{reason}. Enable \"Keep archive\" to extract this archive without \
+                             shrinking it."
+                        ),
+                        json!({ "saved": false }),
+                    ));
+                }
             }
             let found = session::existing(&job, &out).map_err(EngineError::from)?;
             if !found.is_empty() && cfg.replace == "none" {
