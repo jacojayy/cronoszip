@@ -1,0 +1,12 @@
+.gradle/
+local.properties
+*.iml
+.idea/
+build/
+app/build/
+app/src/main/jniLibs/
+rust/target/
+.cxx/
+*.hprof
+captures/
+.externalNativeBuild/
