@@ -22,7 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Archive
-import androidx.compose.material.icons.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.History
@@ -152,7 +152,7 @@ fun HomeScreen(
                 Spacer(Modifier.height(20.dp))
                 PrimaryButton(
                     text = "Get started",
-                    icon = Icons.Rounded.ArrowForward,
+                    icon = Icons.AutoMirrored.Rounded.ArrowForward,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onGetStarted,
                 )
