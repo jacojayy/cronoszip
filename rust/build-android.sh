@@ -17,26 +17,9 @@ cargo ndk \
   -t arm64-v8a \
   -t armeabi-v7a \
   -t x86_64 \
-  -p 26 \
+  --platform 26 \
+  --link-libcxx-shared \
   -o "$out" \
   build -p cronoszip-jni --release
-
-# unrar is C++ and links against the NDK's shared libc++, so it must be
-# packaged next to libcronoszip_jni.so or System.loadLibrary fails at runtime.
-ndk="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
-for abi in arm64-v8a armeabi-v7a x86_64; do
-  case "$abi" in
-    arm64-v8a) triples="aarch64-linux-android" ;;
-    armeabi-v7a) triples="arm-linux-androideabi armv7a-linux-androideabi" ;;
-    x86_64) triples="x86_64-linux-android" ;;
-  esac
-  for triple in $triples; do
-    lib=$(find "$ndk/toolchains/llvm/prebuilt" -path "*/sysroot/usr/lib/$triple/libc++_shared.so" -print -quit 2>/dev/null || true)
-    if [ -n "$lib" ]; then
-      cp "$lib" "$out/$abi/libc++_shared.so"
-      break
-    fi
-  done
-done
 
 echo "Native libraries written to $out"
