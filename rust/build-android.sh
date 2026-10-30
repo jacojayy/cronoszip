@@ -12,11 +12,12 @@ set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 out="$here/../app/src/main/jniLibs"
 
+cd "$here"
 cargo ndk \
   -t arm64-v8a \
   -t armeabi-v7a \
   -t x86_64 \
   -o "$out" \
-  build --manifest-path "$here/Cargo.toml" -p cronoszip-jni --release
+  build -p cronoszip-jni --release
 
 echo "Native libraries written to $out"
