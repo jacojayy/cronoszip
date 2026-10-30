@@ -83,8 +83,11 @@ jobs:
         if: steps.native.outcome == 'failure'
         run: |
           python3 - <<'PY'
+          import re
           from pathlib import Path
-          tail = "\n".join(Path("native-build.log").read_text(errors="replace").splitlines()[-120:])
+          text = Path("native-build.log").read_text(errors="replace")
+          text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+          tail = "\n".join(text.splitlines()[-30:])
           print("::group::Native build tail")
           print(tail)
           print("::endgroup::")
@@ -110,8 +113,11 @@ jobs:
         if: steps.gradle.outcome == 'failure'
         run: |
           python3 - <<'PY'
+          import re
           from pathlib import Path
-          tail = "\n".join(Path("gradle-build.log").read_text(errors="replace").splitlines()[-120:])
+          text = Path("gradle-build.log").read_text(errors="replace")
+          text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+          tail = "\n".join(text.splitlines()[-30:])
           print("::group::Gradle build tail")
           print(tail)
           print("::endgroup::")
