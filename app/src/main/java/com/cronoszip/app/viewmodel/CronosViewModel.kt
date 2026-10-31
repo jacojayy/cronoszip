@@ -1,11 +1,15 @@
 package com.cronoszip.app.viewmodel
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.cronoszip.app.data.ArchiveConfig
@@ -32,6 +36,9 @@ import com.cronoszip.app.data.SetupOptions
 import com.cronoszip.app.data.StorageRoot
 import com.cronoszip.app.data.TestState
 import com.cronoszip.app.data.UiEffect
+import com.cronoszip.app.data.UpdateInfo
+import com.cronoszip.app.data.UpdateRepository
+import com.cronoszip.app.data.UpdateState
 import com.cronoszip.app.util.hasStorageAccess
 import com.cronoszip.app.util.isArchive
 import java.io.File
@@ -48,6 +55,7 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
     private val repository = ArchiveRepository()
     private val settingsStore = SettingsStore(application)
     private val historyStore = HistoryStore(application)
+    private val updateRepository = UpdateRepository(application)
 
     var settings by mutableStateOf(settingsStore.load())
         private set
@@ -90,6 +98,15 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _details = MutableStateFlow(DetailsState())
     val details = _details.asStateFlow()
+
+    private val _update = MutableStateFlow(UpdateState())
+    val update = _update.asStateFlow()
+
+    val appVersion: String
+        get() = updateRepository.currentVersion().first
+
+    val appVersionCode: Long
+        get() = updateRepository.currentVersion().second
 
     fun checkArchive(path: String, password: String? = null) {
         lastPassword = password
@@ -574,6 +591,88 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
             }
             if (path.isNotBlank()) loadDirectory(path)
         }
+    }
+
+    fun checkForUpdates() {
+        if (_update.value.checking || _update.value.downloading) return
+        _update.value = _update.value.copy(checking = true, error = null, message = "Checking latest release...")
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val info = updateRepository.fetchLatest()
+                withContext(Dispatchers.Main) {
+                    if (info == null) {
+                        _update.value = _update.value.copy(checking = false, error = "Could not check for updates.")
+                    } else {
+                        val current = appVersionCode
+                        val hasUpdate = info.tagName.isNotBlank() && info.apkUrl.isNotBlank()
+                        _update.value = _update.value.copy(
+                            checking = false,
+                            update = info,
+                            installable = false,
+                            apkPath = null,
+                            message = if (hasUpdate) "Latest: ${info.tagName}. Download to verify and install." else "No update available.",
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    _update.value = _update.value.copy(checking = false, error = e.message ?: "Update check failed.")
+                }
+            }
+        }
+    }
+
+    fun downloadUpdate() {
+        val info = _update.value.update ?: return
+        if (_update.value.downloading) return
+        _update.value = _update.value.copy(downloading = true, progress = 0, total = 0, error = null, message = "Downloading APK and verifying SHA-256...")
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = updateRepository.downloadApk(info) { done, total ->
+                    _update.value = _update.value.copy(progress = done, total = total)
+                }
+                withContext(Dispatchers.Main) {
+                    if (file == null) {
+                        _update.value = _update.value.copy(downloading = false, error = "Download or SHA-256 verification failed.")
+                    } else {
+                        _update.value = _update.value.copy(
+                            downloading = false,
+                            installable = true,
+                            apkPath = file.absolutePath,
+                            message = "Verified. Ready to install.",
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    _update.value = _update.value.copy(downloading = false, error = e.message ?: "Download failed.")
+                }
+            }
+        }
+    }
+
+    fun installUpdate() {
+        val path = _update.value.apkPath ?: return
+        val context = getApplication<Application>()
+        val file = File(path)
+        if (!file.exists()) {
+            _update.value = _update.value.copy(error = "APK missing. Download again.")
+            return
+        }
+        val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        } else {
+            Uri.fromFile(file)
+        }
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        context.startActivity(Intent.createChooser(intent, "Install CronosZip update").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    fun clearUpdate() {
+        _update.value = UpdateState()
     }
 
     fun updateSettings(newSettings: CronosSettings) {

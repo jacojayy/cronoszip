@@ -259,4 +259,30 @@ data class PasswordRequest(
     val wrong: Boolean,
 )
 
+data class UpdateInfo(
+    val tagName: String = "",
+    val versionName: String = "",
+    val versionCode: Long = 0,
+    val apkUrl: String = "",
+    val apkName: String = "",
+    val apkSize: Long = 0,
+    val sha256Url: String = "",
+    val sha256: String = "",
+    val body: String = "",
+    val htmlUrl: String = "",
+    val publishedAt: String = "",
+)
+
+data class UpdateState(
+    val checking: Boolean = false,
+    val downloading: Boolean = false,
+    val installable: Boolean = false,
+    val progress: Long = 0L,
+    val total: Long = 0L,
+    val message: String = "",
+    val error: String? = null,
+    val update: UpdateInfo? = null,
+    val apkPath: String? = null,
+)
+
 const val DEFAULT_KEEP_FREE = 2L * 1024L * 1024L * 1024L

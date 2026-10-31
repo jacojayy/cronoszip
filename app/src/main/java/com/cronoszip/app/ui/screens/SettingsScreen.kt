@@ -25,12 +25,20 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.ViewColumn
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -41,33 +49,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.cronoszip.app.BuildConfig
-import com.cronoszip.app.data.HistoryEntry
+import com.cronoszip.app.data.CronosSettings
 import com.cronoszip.app.ui.components.GlassCard
-import com.cronoszip.app.ui.components.PrimaryButton
+import com.cronoszip.app.ui.components.GlassChip
 import com.cronoszip.app.ui.components.ScreenHeader
 import com.cronoszip.app.ui.components.SecondaryButton
-import com.cronoszip.app.ui.components.SectionLabel
-import com.cronoszip.app.ui.components.StatusPill
 import com.cronoszip.app.ui.theme.CronosBlue
 import com.cronoszip.app.ui.theme.CronosCyan
-import com.cronoszip.app.ui.theme.Danger
 import com.cronoszip.app.ui.theme.GlassWhite
 import com.cronoszip.app.ui.theme.Success
 import com.cronoszip.app.ui.theme.TextPrimary
 import com.cronoszip.app.ui.theme.TextSecondary
 import com.cronoszip.app.ui.theme.Warning
 import com.cronoszip.app.util.formatBytes
-import com.cronoszip.app.util.formatTime
 import com.cronoszip.app.util.hasStorageAccess
 import com.cronoszip.app.util.requestAllFilesAccess
 import com.cronoszip.app.viewmodel.CronosViewModel
@@ -77,6 +79,9 @@ import kotlin.math.roundToInt
 fun SettingsScreen(
     viewModel: CronosViewModel,
     onBack: () -> Unit,
+    onOpenFiles: () -> Unit = {},
+    onOpenDual: () -> Unit = {},
+    onOpenUpdate: () -> Unit = {},
 ) {
     val settings = viewModel.settings
     val history = viewModel.history
@@ -144,6 +149,12 @@ fun SettingsScreen(
                         color = if (viewModel.engineAvailable) Success else Danger,
                     )
                 }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "Version ${viewModel.appVersion} (code ${viewModel.appVersionCode})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                )
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -177,6 +188,68 @@ fun SettingsScreen(
                         )
                     } else {
                         StatusPill(text = "Granted", color = Success)
+                    }
+                }
+            }
+        }
+
+        item {
+            SectionLabel(text = "File manager")
+        }
+
+        item {
+            GlassCard(contentPadding = PaddingValues(14.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable(onClick = onOpenFiles)
+                            .background(GlassWhite.copy(alpha = 0.035f))
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Folder, contentDescription = null, tint = CronosCyan, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Full file manager", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                            Text("Browse, open archives, access app storage and external storage", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
+                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = TextSecondary)
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable(onClick = onOpenDual)
+                            .background(GlassWhite.copy(alpha = 0.035f))
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.ViewColumn, contentDescription = null, tint = CronosBlue, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Dual panel side view", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                            Text("Two independent panes with shared storage and app storage roots", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
+                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = TextSecondary)
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable(onClick = onOpenUpdate)
+                            .background(GlassWhite.copy(alpha = 0.035f))
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.SystemUpdate, contentDescription = null, tint = CronosCyan, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Updater", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                            Text("Check latest release, download SHA-256 verified APK and install in place", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
+                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = TextSecondary)
                     }
                 }
             }

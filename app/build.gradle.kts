@@ -13,16 +13,30 @@ android {
         applicationId = "com.cronoszip.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("CRONOSZIP_KEYSTORE_PATH") ?: "cronoszip-release.keystore"
+            storeFile = file(keystorePath)
+            storePassword = System.getenv("CRONOSZIP_KEYSTORE_PASSWORD") ?: "cronoszip123"
+            keyAlias = System.getenv("CRONOSZIP_KEY_ALIAS") ?: "cronoszip"
+            keyPassword = System.getenv("CRONOSZIP_KEY_PASSWORD") ?: "cronoszip123"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+        }
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
