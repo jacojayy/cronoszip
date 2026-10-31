@@ -192,6 +192,7 @@ data class FileItem(
     val size: Long,
     val modified: Long,
     val archive: Boolean,
+    val documentId: String? = null,
 )
 
 data class BrowserState(

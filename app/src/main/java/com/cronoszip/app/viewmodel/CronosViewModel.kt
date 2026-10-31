@@ -35,6 +35,7 @@ import com.cronoszip.app.data.PasswordRequest
 import com.cronoszip.app.data.PinnedLocation
 import com.cronoszip.app.data.PinnedStorage
 import com.cronoszip.app.data.RestoreConfig
+import com.cronoszip.app.data.SafStorage
 import com.cronoszip.app.data.SettingsStore
 import com.cronoszip.app.data.SetupOptions
 import com.cronoszip.app.data.StorageRoot
@@ -122,12 +123,13 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun addPinnedTree(label: String, treeUri: Uri, packageName: String?): String? {
-        val path = PinnedStorage.resolveTreePath(treeUri)
-            ?: return "That storage app can only be browsed through Android's document picker, which CronosZip does not support yet. Pick a folder on device storage instead."
-        if (!File(path).canRead()) {
-            return "CronosZip cannot read $path. Grant all-files access and try again."
+        val items = SafStorage.list(getApplication(), treeUri)
+            ?: return "CronosZip could not open that folder. Try another storage app."
+        val name = label.trim().ifBlank {
+            SafStorage.displayName(getApplication(), treeUri)?.takeIf { it.isNotBlank() }
+                ?: items.firstOrNull()?.name
+                ?: "Storage"
         }
-        val name = label.trim().ifBlank { File(path).name.ifBlank { "Storage" } }
         PinnedStorage.add(getApplication(), name, treeUri, packageName)
         refreshPinned()
         return null

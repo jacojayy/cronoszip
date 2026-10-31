@@ -67,7 +67,8 @@ import com.cronoszip.app.data.FileClipboard
 import com.cronoszip.app.data.FileItem
 import com.cronoszip.app.data.FileOperations
 import com.cronoszip.app.data.PinnedLocation
-import com.cronoszip.app.data.PinnedStorage
+import com.cronoszip.app.data.MixedFileOps
+import com.cronoszip.app.data.SafStorage
 import com.cronoszip.app.ui.components.GlassCard
 import com.cronoszip.app.ui.components.GlassChip
 import com.cronoszip.app.ui.components.PrimaryButton
@@ -177,6 +178,7 @@ private fun SinglePane(
     roots: List<Pair<String, String>>,
     onOpenArchive: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     var current by remember { mutableStateOf(roots.firstOrNull()?.second ?: "") }
     var entries by remember { mutableStateOf<List<FileItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -193,6 +195,17 @@ private fun SinglePane(
         current = path
         loading = true
         error = null
+        if (SafStorage.isSaf(path)) {
+            val items = SafStorage.list(context, Uri.parse(path))
+            loading = false
+            if (items == null) {
+                error = "Cannot read this folder."
+                entries = emptyList()
+            } else {
+                entries = items
+            }
+            return
+        }
         val dir = File(path)
         val children = try { dir.listFiles() } catch (e: SecurityException) { null }
         if (children == null) {
@@ -215,6 +228,28 @@ private fun SinglePane(
                 )
             }
         loading = false
+    }
+
+    fun open(item: FileItem) {
+        if (item.directory) {
+            if (SafStorage.isSaf(current)) {
+                val child = item.documentId?.let { SafStorage.childTreeUri(Uri.parse(current), it) }
+                if (child != null) load(child.toString()) else error = "Cannot open this folder."
+            } else {
+                load(item.path)
+            }
+        } else if (isArchive(item.name)) {
+            if (SafStorage.isSaf(item.path)) {
+                val cached = SafStorage.copyToCache(context, Uri.parse(item.path), item.name)
+                if (cached != null) onOpenArchive(cached.absolutePath)
+                else status = "Could not copy the archive out of the document provider."
+            } else {
+                onOpenArchive(item.path)
+            }
+        } else if (SafStorage.isSaf(item.path)) {
+            runCatching { context.startActivity(SafStorage.viewIntent(context, Uri.parse(item.path), null)) }
+                .onFailure { status = it.message }
+        }
     }
 
     LaunchedEffect(roots) {
@@ -241,9 +276,19 @@ private fun SinglePane(
                 selected = FileClipboard.path != null,
                 onClick = if (FileClipboard.path != null) {
                     {
-                        FileOperations.paste(File(current))
-                            .onSuccess { status = "Pasted into ${File(current).name}" }
-                            .onFailure { status = it.message }
+                        val source = FileClipboard.path
+                        val cut = FileClipboard.cut
+                        if (source != null) {
+                            MixedFileOps.paste(context, current, source, cut)
+                                .onSuccess { name ->
+                                    status = "Pasted $name"
+                                    if (cut) {
+                                        FileClipboard.path = null
+                                        FileClipboard.cut = false
+                                    }
+                                }
+                                .onFailure { status = it.message }
+                        }
                         load(current)
                     }
                 } else {
@@ -261,7 +306,7 @@ private fun SinglePane(
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = CronosCyan, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text(text = current, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(text = SafStorage.locationLabel(context, current), style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         status?.let {
             Text(
@@ -277,15 +322,14 @@ private fun SinglePane(
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = CronosCyan) }
                 error != null -> Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) { GlassCard(glow = Warning) { Text("Cannot read folder", style = MaterialTheme.typography.titleMedium, color = TextPrimary); Spacer(Modifier.height(6.dp)); Text(error ?: "", style = MaterialTheme.typography.bodySmall, color = TextSecondary); Spacer(Modifier.height(12.dp)); SecondaryButton("Try again", modifier = Modifier.fillMaxWidth(), onClick = { load(current) }) } }
                 else -> LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    val parent = File(current).parent
+                    val safParent = if (SafStorage.isSaf(current)) SafStorage.parentTreeUri(Uri.parse(current)) else null
+                    val fileParent = if (!SafStorage.isSaf(current)) File(current).parent else null
+                    val parent = safParent?.toString() ?: fileParent
                     if (parent != null && parent != current) {
                         item { Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { load(parent) }.background(GlassWhite.copy(alpha = 0.035f)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Upload, contentDescription = null, tint = TextSecondary); Spacer(Modifier.width(10.dp)); Text("Up one folder", color = TextSecondary) } }
                     }
                     items(entries) { item ->
-                        GlassCard(modifier = Modifier.fillMaxWidth().clickable {
-                            if (item.directory) load(item.path)
-                            else if (isArchive(item.name)) onOpenArchive(item.path)
-                        }, contentPadding = PaddingValues(14.dp)) {
+                        GlassCard(modifier = Modifier.fillMaxWidth().clickable { open(item) }, contentPadding = PaddingValues(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(
                                     modifier = Modifier
@@ -423,9 +467,16 @@ private fun SinglePane(
                         modifier = Modifier.weight(1f),
                         enabled = inputName.isNotBlank(),
                         onClick = {
-                            FileOperations.createFolder(File(current), inputName.trim())
-                                .onSuccess { status = "Created ${it.name}" }
-                                .onFailure { status = it.message }
+                            val name = inputName.trim()
+                            if (SafStorage.isSaf(current)) {
+                                SafStorage.createFolder(context, Uri.parse(current), name)
+                                    .onSuccess { status = "Created ${SafStorage.documentName(context, it) ?: name}" }
+                                    .onFailure { status = it.message }
+                            } else {
+                                FileOperations.createFolder(File(current), name)
+                                    .onSuccess { status = "Created ${it.name}" }
+                                    .onFailure { status = it.message }
+                            }
                             showNewFolder = false
                             load(current)
                         },
@@ -459,9 +510,16 @@ private fun SinglePane(
                         modifier = Modifier.weight(1f),
                         enabled = inputName.isNotBlank(),
                         onClick = {
-                            FileOperations.rename(File(item.path), inputName.trim())
-                                .onSuccess { status = "Renamed to ${it.name}" }
-                                .onFailure { status = it.message }
+                            val name = inputName.trim()
+                            if (SafStorage.isSaf(item.path)) {
+                                SafStorage.rename(context, Uri.parse(item.path), name)
+                                    .onSuccess { status = "Renamed to ${SafStorage.documentName(context, it) ?: name}" }
+                                    .onFailure { status = it.message }
+                            } else {
+                                FileOperations.rename(File(item.path), name)
+                                    .onSuccess { status = "Renamed to ${it.name}" }
+                                    .onFailure { status = it.message }
+                            }
                             renameItem = null
                             load(current)
                         },
@@ -496,9 +554,15 @@ private fun SinglePane(
                         text = "Delete",
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            FileOperations.delete(File(item.path))
-                                .onSuccess { status = "Deleted ${item.name}" }
-                                .onFailure { status = it.message }
+                            if (SafStorage.isSaf(item.path)) {
+                                SafStorage.delete(context, Uri.parse(item.path))
+                                    .onSuccess { status = "Deleted ${item.name}" }
+                                    .onFailure { status = it.message }
+                            } else {
+                                FileOperations.delete(File(item.path))
+                                    .onSuccess { status = "Deleted ${item.name}" }
+                                    .onFailure { status = it.message }
+                            }
                             deleteItem = null
                             load(current)
                         },
@@ -547,6 +611,7 @@ private fun Pane(
     onChanged: () -> Unit,
     onOpenArchive: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     var current by remember(start) { mutableStateOf(start) }
     var entries by remember { mutableStateOf<List<FileItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -558,6 +623,17 @@ private fun Pane(
         current = path
         loading = true
         error = null
+        if (SafStorage.isSaf(path)) {
+            val items = SafStorage.list(context, Uri.parse(path))
+            loading = false
+            if (items == null) {
+                error = "Cannot read"
+                entries = emptyList()
+            } else {
+                entries = items
+            }
+            return
+        }
         val dir = File(path)
         val children = try { dir.listFiles() } catch (e: SecurityException) { null }
         if (children == null) {
@@ -572,6 +648,27 @@ private fun Pane(
         loading = false
     }
 
+    fun open(item: FileItem) {
+        if (item.directory) {
+            if (SafStorage.isSaf(current)) {
+                val child = item.documentId?.let { SafStorage.childTreeUri(Uri.parse(current), it) }
+                if (child != null) load(child.toString()) else error = "Cannot open"
+            } else {
+                load(item.path)
+            }
+        } else if (isArchive(item.name)) {
+            if (SafStorage.isSaf(item.path)) {
+                val cached = SafStorage.copyToCache(context, Uri.parse(item.path), item.name)
+                if (cached != null) onOpenArchive(cached.absolutePath) else error = "Cannot copy archive"
+            } else {
+                onOpenArchive(item.path)
+            }
+        } else if (SafStorage.isSaf(item.path)) {
+            runCatching { context.startActivity(SafStorage.viewIntent(context, Uri.parse(item.path), null)) }
+                .onFailure { error = it.message }
+        }
+    }
+
     LaunchedEffect(current, refreshToken) { if (current.isNotBlank()) load(current) }
 
     GlassCard(modifier = modifier.fillMaxHeight(), contentPadding = PaddingValues(10.dp)) {
@@ -584,9 +681,19 @@ private fun Pane(
                         selected = FileClipboard.path != null,
                         onClick = if (FileClipboard.path != null) {
                             {
-                                FileOperations.paste(File(current))
-                                    .onSuccess { onChanged() }
-                                    .onFailure { error = it.message }
+                                val source = FileClipboard.path
+                                val cut = FileClipboard.cut
+                                if (source != null) {
+                                    MixedFileOps.paste(context, current, source, cut)
+                                        .onSuccess {
+                                            if (cut) {
+                                                FileClipboard.path = null
+                                                FileClipboard.cut = false
+                                            }
+                                            onChanged()
+                                        }
+                                        .onFailure { error = it.message }
+                                }
                                 load(current)
                             }
                         } else {
@@ -598,7 +705,7 @@ private fun Pane(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = CronosCyan, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(text = current, style = MaterialTheme.typography.labelSmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(text = SafStorage.locationLabel(context, current), style = MaterialTheme.typography.labelSmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.height(6.dp))
             Box(modifier = Modifier.weight(1f)) {
@@ -606,15 +713,14 @@ private fun Pane(
                     loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = CronosCyan, strokeWidth = 2.dp) }
                     error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(error ?: "", style = MaterialTheme.typography.bodySmall, color = Warning) }
                     else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        val parent = File(current).parent
+                        val safParent = if (SafStorage.isSaf(current)) SafStorage.parentTreeUri(Uri.parse(current)) else null
+                        val fileParent = if (!SafStorage.isSaf(current)) File(current).parent else null
+                        val parent = safParent?.toString() ?: fileParent
                         if (parent != null && parent != current) {
                             item { Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { load(parent) }.background(GlassWhite.copy(alpha = 0.03f)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Upload, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)); Text("Up", color = TextSecondary, style = MaterialTheme.typography.bodySmall) } }
                         }
                         items(entries) { item ->
-                            Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
-                                if (item.directory) load(item.path)
-                                else if (isArchive(item.name)) onOpenArchive(item.path)
-                            }.background(GlassWhite.copy(alpha = 0.035f)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { open(item) }.background(GlassWhite.copy(alpha = 0.035f)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(if (item.directory) Brush.linearGradient(listOf(CronosCyan.copy(alpha = 0.22f), CronosBlue.copy(alpha = 0.08f))) else Brush.linearGradient(listOf(CronosBlue.copy(alpha = 0.26f), CronosCyan.copy(alpha = 0.1f)))), contentAlignment = Alignment.Center) {
                                     Icon(if (item.directory) Icons.Rounded.Folder else if (isArchive(item.name)) Icons.Rounded.Archive else Icons.Rounded.Description, contentDescription = null, tint = if (item.directory) CronosCyan else Color(0xFF9CC7FF), modifier = Modifier.size(17.dp))
                                 }
@@ -713,7 +819,7 @@ private fun AddStorageDialog(
             if (pinned.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
                 pinned.forEach { pin ->
-                    val shownPath = if (pin.isRoot) pin.path else pin.treeUri?.let { PinnedStorage.resolveTreePath(it) }
+                    val shownPath = if (pin.isRoot) pin.path else pin.treeUri?.let { SafStorage.displayName(context, it) ?: it.toString() }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(pin.label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -788,8 +894,12 @@ fun managerRoots(
 ): List<Pair<String, String>> {
     val list = mutableListOf<Pair<String, String>>()
     pinned.forEach { pin ->
-        val path = if (pin.isRoot) pin.path else pin.treeUri?.let { PinnedStorage.resolveTreePath(it) }
-        if (!path.isNullOrBlank() && File(path).canRead()) list.add(pin.label to path)
+        if (pin.isRoot) {
+            val path = pin.path
+            if (!path.isNullOrBlank() && File(path).canRead()) list.add(pin.label to path)
+        } else {
+            pin.treeUri?.let { list.add(pin.label to it.toString()) }
+        }
     }
     val external = android.os.Environment.getExternalStorageDirectory()
     external?.let { list.add("Internal" to it.absolutePath) }
