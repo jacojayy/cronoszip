@@ -37,6 +37,7 @@ class UpdateRepository(private val context: Context) {
             var apkName = ""
             var apkSize: Long = 0
             var shaUrl = ""
+            var versionUrl = ""
             for (i in 0 until assets.length()) {
                 val asset = assets.optJSONObject(i) ?: continue
                 val name = asset.optString("name")
@@ -44,6 +45,9 @@ class UpdateRepository(private val context: Context) {
                 val size = asset.optLong("size")
                 if (name.endsWith(".sha256") && shaUrl.isBlank()) {
                     shaUrl = browserUrl
+                }
+                if (name == "version.txt" && versionUrl.isBlank()) {
+                    versionUrl = browserUrl
                 }
                 if (name.endsWith(".apk") && !name.contains("unaligned") && apkUrl.isBlank()) {
                     apkUrl = browserUrl
@@ -56,10 +60,15 @@ class UpdateRepository(private val context: Context) {
                 sha = downloadText(shaUrl).trim()
                 sha = sha.split("\\s+".toRegex()).firstOrNull().orEmpty()
             }
+            val releaseCode = if (versionUrl.isNotEmpty()) {
+                downloadText(versionUrl).trim().toLongOrNull() ?: 0L
+            } else {
+                0L
+            }
             UpdateInfo(
                 tagName = tag,
                 versionName = tag.removePrefix("v"),
-                versionCode = 0,
+                versionCode = releaseCode,
                 apkUrl = apkUrl,
                 apkName = apkName,
                 apkSize = apkSize,

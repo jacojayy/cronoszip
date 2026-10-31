@@ -13,8 +13,9 @@ android {
         applicationId = "com.cronoszip.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        // Monotonic, time-based code so every build installs over the previous one.
+        versionCode = (System.currentTimeMillis() / 60_000L).toInt()
+        versionName = System.getenv("CRONOSZIP_VERSION_NAME") ?: "1.2.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")

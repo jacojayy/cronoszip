@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build debug APK
+    name: Build release APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -100,14 +100,14 @@ jobs:
         if: steps.native.outcome == 'success'
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
+      - name: Build release APK
         id: gradle
         if: steps.native.outcome == 'success'
         continue-on-error: true
         run: |
           set -o pipefail
           chmod +x gradlew
-          ./gradlew :app:assembleDebug --stacktrace 2>&1 | tee gradle-build.log
+          ./gradlew :app:assembleRelease --stacktrace 2>&1 | tee gradle-build.log
 
       - name: Report Gradle build failure
         if: steps.gradle.outcome == 'failure'
@@ -129,7 +129,9 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: cronoszip-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: cronoszip-release-apk
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/output-metadata.json
           if-no-files-found: error
           retention-days: 14

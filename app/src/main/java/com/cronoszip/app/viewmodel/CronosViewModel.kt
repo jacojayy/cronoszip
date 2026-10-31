@@ -2,6 +2,8 @@ package com.cronoszip.app.viewmodel
 
 import android.app.Application
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -42,6 +44,7 @@ import com.cronoszip.app.data.UpdateState
 import com.cronoszip.app.util.hasStorageAccess
 import com.cronoszip.app.util.isArchive
 import java.io.File
+import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -622,8 +625,13 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
                     if (info == null) {
                         _update.value = _update.value.copy(checking = false, error = "Could not check for updates.")
                     } else {
+                        val currentCode = updateRepository.currentVersion().second
                         val hasUpdate = info.tagName.isNotBlank() && info.apkUrl.isNotBlank() &&
-                            isNewerVersion(info.versionName, appVersion)
+                            (if (info.versionCode > 0) {
+                                info.versionCode > currentCode
+                            } else {
+                                isNewerVersion(info.versionName, appVersion)
+                            })
                         _update.value = _update.value.copy(
                             checking = false,
                             update = info,
@@ -690,6 +698,17 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
             _update.value = _update.value.copy(error = "APK missing. Download again.")
             return
         }
+        val installedFingerprint = signingFingerprint(packageInfo(null))
+        val candidateFingerprint = signingFingerprint(packageInfo(file.absolutePath))
+        if (installedFingerprint.isNotEmpty() && candidateFingerprint.isNotEmpty() &&
+            installedFingerprint != candidateFingerprint
+        ) {
+            _update.value = _update.value.copy(
+                error = "This APK is signed with a different key than the installed app, so Android cannot update it in place. " +
+                    "Uninstall CronosZip once and install this APK; all later updates will install in place.",
+            )
+            return
+        }
         val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
         } else {
@@ -700,6 +719,46 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
         context.startActivity(Intent.createChooser(intent, "Install CronosZip update").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    private fun packageInfo(path: String?): PackageInfo? {
+        val context = getApplication<Application>()
+        val pm = context.packageManager
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val flags = PackageManager.PackageInfoFlags.of(
+                    PackageManager.GET_SIGNING_CERTIFICATES.toLong(),
+                )
+                if (path == null) pm.getPackageInfo(context.packageName, flags)
+                else pm.getPackageArchiveInfo(path, flags)
+            } else {
+                @Suppress("DEPRECATION")
+                val flag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                } else {
+                    PackageManager.GET_SIGNATURES
+                }
+                if (path == null) pm.getPackageInfo(context.packageName, flag)
+                else pm.getPackageArchiveInfo(path, flag)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun signingFingerprint(info: PackageInfo?): String {
+        if (info == null) return ""
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners
+        } else {
+            @Suppress("DEPRECATION")
+            info.signatures
+        } ?: return ""
+        val digest = MessageDigest.getInstance("SHA-256")
+        return signatures.joinToString("|") { signature ->
+            digest.digest(signature.toByteArray())
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        }
     }
 
     private fun isNewerVersion(latest: String, current: String): Boolean {

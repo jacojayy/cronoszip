@@ -167,7 +167,7 @@ fun UpdaterScreen(
             GlassCard(contentPadding = PaddingValues(16.dp)) {
                 Text("How it works", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
                 Spacer(Modifier.height(6.dp))
-                Text("The updater fetches the latest GitHub release, downloads the .sha256 asset, downloads the APK, verifies its SHA-256, and launches the installer with FileProvider. Because releases are signed with the same keystore, Android can update without uninstalling.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Text("The updater fetches the latest GitHub release, downloads the .sha256 asset, downloads the APK, verifies its SHA-256, checks the signing certificate, and launches the installer with FileProvider. Every build is signed with the same release keystore, so Android replaces the app in place instead of asking for an uninstall.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 Spacer(Modifier.height(10.dp))
                 Text("Allow \"Install unknown apps\" for CronosZip if prompted on Android 8+.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             }

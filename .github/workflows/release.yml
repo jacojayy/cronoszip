@@ -115,7 +115,7 @@ jobs:
           set -euo pipefail
 
           rm -rf dist
-          gh run download "$RUN_ID" --name cronoszip-debug-apk --dir dist
+          gh run download "$RUN_ID" --name cronoszip-release-apk --dir dist
 
           APK=$(find dist -type f -name '*.apk' -print -quit)
           if [ -z "$APK" ]; then
@@ -141,10 +141,23 @@ jobs:
           fi
 
           SAFE_TAG=$(printf '%s' "$TAG" | sed 's/[^A-Za-z0-9._-]/-/g')
-          ASSET="CronosZip-${SAFE_TAG}-debug.apk"
+          ASSET="CronosZip-${SAFE_TAG}.apk"
 
           cp "$APK" "$ASSET"
           sha256sum "$ASSET" > "${ASSET}.sha256"
+
+          META=$(find dist -type f -name 'output-metadata.json' -print -quit)
+          if [ -z "$META" ]; then
+            echo "::error::The build run did not contain output-metadata.json."
+            exit 1
+          fi
+          VERSION_CODE=$(python3 - "$META" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          print(data["elements"][0]["versionCode"])
+          PY
+          )
+          printf '%s\n' "$VERSION_CODE" > version.txt
 
           SIZE_BYTES=$(stat -c '%s' "$ASSET")
           SIZE_HUMAN=$(numfmt --to=iec-i --suffix=B "$SIZE_BYTES")
@@ -153,12 +166,13 @@ jobs:
           {
             echo "safe_tag=$SAFE_TAG"
             echo "asset=$ASSET"
+            echo "version_code=$VERSION_CODE"
             echo "size_bytes=$SIZE_BYTES"
             echo "size_human=$SIZE_HUMAN"
             echo "sha256=$SHA256"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Prepared $ASSET ($SIZE_HUMAN, sha256 $SHA256)"
+          echo "Prepared $ASSET (versionCode $VERSION_CODE, $SIZE_HUMAN, sha256 $SHA256)"
 
       - name: Detect first release
         id: first
@@ -257,6 +271,7 @@ jobs:
             release create "$TAG"
             "$ASSET"
             "${ASSET}.sha256"
+            version.txt
             --title "$TITLE"
             --target "$SHA"
           )
