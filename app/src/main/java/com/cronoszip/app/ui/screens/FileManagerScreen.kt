@@ -67,6 +67,7 @@ import com.cronoszip.app.data.FileClipboard
 import com.cronoszip.app.data.FileItem
 import com.cronoszip.app.data.FileOperations
 import com.cronoszip.app.data.PinnedLocation
+import com.cronoszip.app.data.PinnedStorage
 import com.cronoszip.app.data.MixedFileOps
 import com.cronoszip.app.data.SafStorage
 import com.cronoszip.app.ui.components.GlassCard
@@ -240,9 +241,19 @@ private fun SinglePane(
             }
         } else if (isArchive(item.name)) {
             if (SafStorage.isSaf(item.path)) {
-                val cached = SafStorage.copyToCache(context, Uri.parse(item.path), item.name)
-                if (cached != null) onOpenArchive(cached.absolutePath)
-                else status = "Could not copy the archive out of the document provider."
+                val documentUri = Uri.parse(item.path)
+                val direct = PinnedStorage.resolveDocumentPath(documentUri)
+                if (direct != null) {
+                    onOpenArchive(direct)
+                } else {
+                    val cached = SafStorage.copyToCache(context, documentUri, item.name)
+                    if (cached != null) {
+                        status = "Copied ${item.name} to app cache for extraction."
+                        onOpenArchive(cached.absolutePath)
+                    } else {
+                        status = "Could not copy the archive out of the document provider."
+                    }
+                }
             } else {
                 onOpenArchive(item.path)
             }
@@ -658,8 +669,14 @@ private fun Pane(
             }
         } else if (isArchive(item.name)) {
             if (SafStorage.isSaf(item.path)) {
-                val cached = SafStorage.copyToCache(context, Uri.parse(item.path), item.name)
-                if (cached != null) onOpenArchive(cached.absolutePath) else error = "Cannot copy archive"
+                val documentUri = Uri.parse(item.path)
+                val direct = PinnedStorage.resolveDocumentPath(documentUri)
+                if (direct != null) {
+                    onOpenArchive(direct)
+                } else {
+                    val cached = SafStorage.copyToCache(context, documentUri, item.name)
+                    if (cached != null) onOpenArchive(cached.absolutePath) else error = "Cannot copy archive"
+                }
             } else {
                 onOpenArchive(item.path)
             }

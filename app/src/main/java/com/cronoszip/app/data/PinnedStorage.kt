@@ -119,6 +119,17 @@ object PinnedStorage {
         }
     }
 
+    /** Resolves a document (not tree) Uri to a real path when the provider is device storage. */
+    fun resolveDocumentPath(documentUri: Uri): String? {
+        val authority = documentUri.authority ?: return null
+        val docId = runCatching { DocumentsContract.getDocumentId(documentUri) }.getOrNull() ?: return null
+        return when (authority) {
+            "com.android.externalstorage.documents" -> externalStoragePath(docId)
+            "com.android.providers.downloads.documents" -> downloadsPath(docId)
+            else -> null
+        }
+    }
+
     private fun externalStoragePath(docId: String): String? {
         val parts = docId.split(':', limit = 2)
         val volume = parts.getOrNull(0)?.takeIf { it.isNotBlank() } ?: return null

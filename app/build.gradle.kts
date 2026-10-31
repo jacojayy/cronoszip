@@ -15,7 +15,7 @@ android {
         targetSdk = 35
         // Monotonic, time-based code so every build installs over the previous one.
         versionCode = (System.currentTimeMillis() / 60_000L).toInt()
-        versionName = System.getenv("CRONOSZIP_VERSION_NAME") ?: "1.2.2"
+        versionName = System.getenv("CRONOSZIP_VERSION_NAME") ?: "1.2.3"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
