@@ -31,11 +31,13 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,10 +55,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.cronoszip.app.data.FileClipboard
 import com.cronoszip.app.data.FileItem
+import com.cronoszip.app.data.FileOperations
 import com.cronoszip.app.ui.components.GlassCard
 import com.cronoszip.app.ui.components.GlassChip
 import com.cronoszip.app.ui.components.PrimaryButton
@@ -86,6 +91,7 @@ fun DualPaneFileManagerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     var granted by remember { mutableStateOf(hasStorageAccess(context)) }
     val roots = remember(context) { managerRoots(context) }
+    var refreshToken by remember { mutableStateOf(0) }
 
     val legacyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         granted = hasStorageAccess(context)
@@ -122,18 +128,26 @@ fun DualPaneFileManagerScreen(
         }
 
         Row(modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Pane(modifier = Modifier.weight(1f), roots = roots, start = roots.firstOrNull()?.second.orEmpty(), onOpenArchive = onOpenArchive)
-            Pane(modifier = Modifier.weight(1f), roots = roots, start = roots.getOrNull(1)?.second ?: roots.firstOrNull()?.second.orEmpty(), onOpenArchive = onOpenArchive)
+            Pane(modifier = Modifier.weight(1f), roots = roots, start = roots.firstOrNull()?.second.orEmpty(), refreshToken = refreshToken, onChanged = { refreshToken++ }, onOpenArchive = onOpenArchive)
+            Pane(modifier = Modifier.weight(1f), roots = roots, start = roots.getOrNull(1)?.second ?: roots.firstOrNull()?.second.orEmpty(), refreshToken = refreshToken, onChanged = { refreshToken++ }, onOpenArchive = onOpenArchive)
         }
     }
 }
 
 @Composable
-private fun Pane(modifier: Modifier = Modifier, roots: List<Pair<String, String>>, start: String, onOpenArchive: (String) -> Unit) {
+private fun Pane(
+    modifier: Modifier = Modifier,
+    roots: List<Pair<String, String>>,
+    start: String,
+    refreshToken: Int,
+    onChanged: () -> Unit,
+    onOpenArchive: (String) -> Unit,
+) {
     var current by remember(start) { mutableStateOf(start) }
-    var items by remember { mutableStateOf<List<FileItem>>(emptyList()) }
+    var entries by remember { mutableStateOf<List<FileItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var action by remember { mutableStateOf<FileItem?>(null) }
 
     fun load(path: String) {
         if (path.isBlank()) return
@@ -145,21 +159,37 @@ private fun Pane(modifier: Modifier = Modifier, roots: List<Pair<String, String>
         if (children == null) {
             loading = false
             error = "Cannot read"
-            items = emptyList()
+            entries = emptyList()
             return
         }
-        items = children.filterNot { it.name.startsWith(".") }.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() })).map {
+        entries = children.filterNot { it.name.startsWith(".") }.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() })).map {
             FileItem(name = it.name, path = it.absolutePath, directory = it.isDirectory, size = if (it.isDirectory) 0L else it.length(), modified = it.lastModified(), archive = it.isFile && isArchive(it.name))
         }
         loading = false
     }
 
-    LaunchedEffect(current) { if (current.isNotBlank()) load(current) }
+    LaunchedEffect(current, refreshToken) { if (current.isNotBlank()) load(current) }
 
     GlassCard(modifier = modifier.fillMaxHeight(), contentPadding = PaddingValues(10.dp)) {
         Column(modifier = Modifier.fillMaxSize()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 6.dp)) {
                 items(roots) { root -> GlassChip(text = root.first.take(9), selected = current == root.second, onClick = { load(root.second) }) }
+                item {
+                    GlassChip(
+                        text = if (FileClipboard.cut) "Move here" else "Paste",
+                        selected = FileClipboard.path != null,
+                        onClick = if (FileClipboard.path != null) {
+                            {
+                                FileOperations.paste(File(current))
+                                    .onSuccess { onChanged() }
+                                    .onFailure { error = it.message }
+                                load(current)
+                            }
+                        } else {
+                            null
+                        },
+                    )
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = CronosCyan, modifier = Modifier.size(14.dp))
@@ -176,7 +206,7 @@ private fun Pane(modifier: Modifier = Modifier, roots: List<Pair<String, String>
                         if (parent != null && parent != current) {
                             item { Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { load(parent) }.background(GlassWhite.copy(alpha = 0.03f)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Upload, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)); Text("Up", color = TextSecondary, style = MaterialTheme.typography.bodySmall) } }
                         }
-                        items(items) { item ->
+                        items(entries) { item ->
                             Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
                                 if (item.directory) load(item.path)
                                 else if (isArchive(item.name)) onOpenArchive(item.path)
@@ -190,10 +220,47 @@ private fun Pane(modifier: Modifier = Modifier, roots: List<Pair<String, String>
                                     Text(if (item.directory) "Folder" else formatBytes(item.size), style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                                 }
                                 if (item.directory || isArchive(item.name)) Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextSecondary.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+                                IconButton(onClick = { action = item }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Rounded.MoreVert, contentDescription = "File actions", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    action?.let { item ->
+        Dialog(onDismissRequest = { action = null }) {
+            GlassCard(glow = CronosCyan) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(12.dp))
+                SecondaryButton(
+                    text = "Copy",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        FileClipboard.path = item.path
+                        FileClipboard.cut = false
+                        action = null
+                    },
+                )
+                Spacer(Modifier.height(8.dp))
+                SecondaryButton(
+                    text = "Cut / move",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        FileClipboard.path = item.path
+                        FileClipboard.cut = true
+                        action = null
+                    },
+                )
             }
         }
     }

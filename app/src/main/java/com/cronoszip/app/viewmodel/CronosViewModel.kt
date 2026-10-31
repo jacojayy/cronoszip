@@ -603,14 +603,18 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
                     if (info == null) {
                         _update.value = _update.value.copy(checking = false, error = "Could not check for updates.")
                     } else {
-                        val current = appVersionCode
-                        val hasUpdate = info.tagName.isNotBlank() && info.apkUrl.isNotBlank()
+                        val hasUpdate = info.tagName.isNotBlank() && info.apkUrl.isNotBlank() &&
+                            isNewerVersion(info.versionName, appVersionName)
                         _update.value = _update.value.copy(
                             checking = false,
                             update = info,
                             installable = false,
                             apkPath = null,
-                            message = if (hasUpdate) "Latest: ${info.tagName}. Download to verify and install." else "No update available.",
+                            message = if (hasUpdate) {
+                                "Latest: ${info.tagName}. Download to verify and install."
+                            } else {
+                                "You are on the latest version (${appVersionName})."
+                            },
                         )
                     }
                 }
@@ -625,6 +629,14 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
     fun downloadUpdate() {
         val info = _update.value.update ?: return
         if (_update.value.downloading) return
+        if (info.apkUrl.isBlank()) {
+            _update.value = _update.value.copy(error = "The latest release has no APK asset.")
+            return
+        }
+        if (info.sha256.isBlank()) {
+            _update.value = _update.value.copy(error = "The latest release has no .sha256 asset. Refusing an unverified install.")
+            return
+        }
         _update.value = _update.value.copy(downloading = true, progress = 0, total = 0, error = null, message = "Downloading APK and verifying SHA-256...")
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -670,6 +682,22 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
         }
         context.startActivity(Intent.createChooser(intent, "Install CronosZip update").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
+
+    private fun isNewerVersion(latest: String, current: String): Boolean {
+        val a = versionParts(latest)
+        val b = versionParts(current)
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrElse(i) { 0 }
+            val y = b.getOrElse(i) { 0 }
+            if (x != y) return x > y
+        }
+        return false
+    }
+
+    private fun versionParts(value: String): List<Int> =
+        value.trim().removePrefix("v").removePrefix("V")
+            .split('.')
+            .map { part -> part.takeWhile { it.isDigit() }.toIntOrNull() ?: 0 }
 
     fun clearUpdate() {
         _update.value = UpdateState()

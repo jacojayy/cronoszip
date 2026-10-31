@@ -3,8 +3,6 @@ package com.cronoszip.app.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +22,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Verified
@@ -37,9 +34,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,17 +62,10 @@ fun UpdaterScreen(
 ) {
     val context = LocalContext.current
     val update by viewModel.update.collectAsState()
-    var canInstall by remember { mutableStateOf(true) }
-
-    val installPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
 
     LaunchedEffect(Unit) {
         if (update.update == null && !update.checking) {
             viewModel.checkForUpdates()
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val pm = context.packageManager
-            canInstall = pm.canRequestPackageInstalls()
         }
     }
 
@@ -92,7 +79,18 @@ fun UpdaterScreen(
         item {
             GlassCard(glow = CronosCyan) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(CronosBlue.copy(alpha = 0.34f), CronosCyan.copy(alpha = 0.12f)))), border = BorderStroke(1.dp, CronosBlue.copy(alpha = 0.35f)), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(CronosBlue.copy(alpha = 0.34f), CronosCyan.copy(alpha = 0.12f)),
+                                ),
+                            )
+                            .border(1.dp, CronosBlue.copy(alpha = 0.35f), RoundedCornerShape(16.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Icon(Icons.Rounded.SystemUpdate, contentDescription = null, tint = CronosCyan, modifier = Modifier.size(28.dp))
                     }
                     Spacer(Modifier.width(14.dp))
@@ -145,8 +143,10 @@ fun UpdaterScreen(
                         Spacer(Modifier.height(6.dp))
                         Text("${formatBytes(update.progress)} / ${formatBytes(update.total)}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                     } else if (update.installable) {
-                        PrimaryButton(text = "Install update (in place)", icon = Icons.Rounded.InstallMobile, modifier = Modifier.fillMaxWidth(), onClick = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !canInstall) {
+                        PrimaryButton(text = "Install update (in place)", icon = Icons.Rounded.SystemUpdate, modifier = Modifier.fillMaxWidth(), onClick = {
+                            val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                                context.packageManager.canRequestPackageInstalls()
+                            if (!allowed) {
                                 val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 context.startActivity(intent)
@@ -173,7 +173,7 @@ fun UpdaterScreen(
             }
         }
 
-        update.message.isNotBlank() && !update.error.isNullOrBlank() == false && update.downloading.not() && !update.checking -> {
+        if (update.message.isNotBlank() && update.error.isNullOrBlank() && !update.downloading && !update.checking) {
             item {
                 GlassCard(glow = CronosCyan, contentPadding = PaddingValues(14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -196,5 +196,3 @@ fun UpdaterScreen(
         }
     }
 }
-
-import androidx.compose.foundation.BorderStroke

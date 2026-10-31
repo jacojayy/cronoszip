@@ -133,7 +133,7 @@ class UpdateRepository(private val context: Context) {
                 if (read > 0) digest.update(buffer, 0, read)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
     fun currentVersion(): Pair<String, Long> {
@@ -145,7 +145,12 @@ class UpdateRepository(private val context: Context) {
                 @Suppress("DEPRECATION")
                 pm.getPackageInfo(context.packageName, 0)
             }
-            val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+            @Suppress("DEPRECATION")
+            val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.longVersionCode
+            } else {
+                info.versionCode.toLong()
+            }
             info.versionName.orEmpty() to code
         } catch (e: Exception) {
             "0" to 0L

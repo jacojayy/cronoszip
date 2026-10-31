@@ -31,7 +31,6 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VerifiedUser
-import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.ViewColumn
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward

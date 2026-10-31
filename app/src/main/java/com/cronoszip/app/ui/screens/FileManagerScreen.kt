@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Home
@@ -39,12 +40,13 @@ import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,12 +59,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.cronoszip.app.data.BrowserMode
+import com.cronoszip.app.data.FileClipboard
 import com.cronoszip.app.data.FileItem
+import com.cronoszip.app.data.FileOperations
 import com.cronoszip.app.ui.components.GlassCard
 import com.cronoszip.app.ui.components.GlassChip
 import com.cronoszip.app.ui.components.PrimaryButton
@@ -91,12 +95,17 @@ fun FileManagerScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var granted by remember { mutableStateOf(hasStorageAccess(context)) }
-    val browser by viewModel.browser.collectAsState()
     val roots = remember(context) { managerRoots(context) }
     var current by remember { mutableStateOf(roots.firstOrNull()?.second ?: "") }
-    var items by remember { mutableStateOf<List<FileItem>>(emptyList()) }
+    var entries by remember { mutableStateOf<List<FileItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var actionItem by remember { mutableStateOf<FileItem?>(null) }
+    var renameItem by remember { mutableStateOf<FileItem?>(null) }
+    var deleteItem by remember { mutableStateOf<FileItem?>(null) }
+    var showNewFolder by remember { mutableStateOf(false) }
+    var inputName by remember { mutableStateOf("") }
 
     val legacyPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -125,10 +134,10 @@ fun FileManagerScreen(
         if (children == null) {
             loading = false
             error = "Cannot read this folder."
-            items = emptyList()
+            entries = emptyList()
             return
         }
-        items = children
+        entries = children
             .filterNot { it.name.startsWith(".") }
             .sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() }))
             .map {
@@ -176,6 +185,33 @@ fun FileManagerScreen(
             return@Column
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            GlassChip(
+                text = "New folder",
+                onClick = {
+                    inputName = ""
+                    showNewFolder = true
+                },
+            )
+            GlassChip(
+                text = if (FileClipboard.cut) "Move here" else "Paste",
+                selected = FileClipboard.path != null,
+                onClick = if (FileClipboard.path != null) {
+                    {
+                        FileOperations.paste(File(current))
+                            .onSuccess { status = "Pasted into ${File(current).name}" }
+                            .onFailure { status = it.message }
+                        load(current)
+                    }
+                } else {
+                    null
+                },
+            )
+        }
+        Spacer(Modifier.height(8.dp))
         LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(roots) { root ->
                 GlassChip(text = root.first, selected = current == root.second, onClick = { load(root.second) })
@@ -187,6 +223,14 @@ fun FileManagerScreen(
             Spacer(Modifier.width(8.dp))
             Text(text = current, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        status?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = CronosCyan,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            )
+        }
         Spacer(Modifier.height(10.dp))
         Box(modifier = Modifier.weight(1f)) {
             when {
@@ -197,13 +241,34 @@ fun FileManagerScreen(
                     if (parent != null && parent != current) {
                         item { Row(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { load(parent) }.background(GlassWhite.copy(alpha = 0.035f)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Rounded.Upload, contentDescription = null, tint = TextSecondary); Spacer(Modifier.width(10.dp)); Text("Up one folder", color = TextSecondary) } }
                     }
-                    items(items) { item ->
+                    items(entries) { item ->
                         GlassCard(modifier = Modifier.fillMaxWidth().clickable {
                             if (item.directory) load(item.path)
                             else if (isArchive(item.name)) onOpenArchive(item.path)
                         }, contentPadding = PaddingValues(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(modifier = Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(if (item.directory) Brush.linearGradient(listOf(CronosCyan.copy(alpha = 0.24f), CronosBlue.copy(alpha = 0.08f))) else Brush.linearGradient(listOf(CronosBlue.copy(alpha = 0.3f), CronosCyan.copy(alpha = 0.1f)))), border = BorderStroke(1.dp, if (item.directory) CronosCyan.copy(alpha = 0.25f) else CronosBlue.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(13.dp))
+                                        .background(
+                                            if (item.directory) {
+                                                Brush.linearGradient(
+                                                    listOf(CronosCyan.copy(alpha = 0.24f), CronosBlue.copy(alpha = 0.08f)),
+                                                )
+                                            } else {
+                                                Brush.linearGradient(
+                                                    listOf(CronosBlue.copy(alpha = 0.3f), CronosCyan.copy(alpha = 0.1f)),
+                                                )
+                                            },
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (item.directory) CronosCyan.copy(alpha = 0.25f) else CronosBlue.copy(alpha = 0.3f),
+                                            RoundedCornerShape(13.dp),
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
                                     Icon(if (item.directory) Icons.Rounded.Folder else if (isArchive(item.name)) Icons.Rounded.Archive else Icons.Rounded.Description, contentDescription = null, tint = if (item.directory) CronosCyan else Color(0xFF9CC7FF))
                                 }
                                 Spacer(Modifier.width(13.dp))
@@ -211,10 +276,193 @@ fun FileManagerScreen(
                                     Text(item.name, style = MaterialTheme.typography.titleMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(if (item.directory) "Folder" else "${formatBytes(item.size)} · ${formatTime(item.modified)}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                                 }
-                                if (item.directory || isArchive(item.name)) Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextSecondary.copy(alpha = 0.55f))
+                                if (item.directory || isArchive(item.name)) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ChevronRight,
+                                        contentDescription = null,
+                                        tint = TextSecondary.copy(alpha = 0.55f),
+                                    )
+                                }
+                                IconButton(onClick = { actionItem = item }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.MoreVert,
+                                        contentDescription = "File actions",
+                                        tint = TextSecondary,
+                                    )
+                                }
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    actionItem?.let { item ->
+        Dialog(onDismissRequest = { actionItem = null }) {
+            GlassCard(glow = CronosCyan) {
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (item.directory) "Folder" else "File",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                )
+                Spacer(Modifier.height(16.dp))
+                SecondaryButton(
+                    text = "Copy",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        FileClipboard.path = item.path
+                        FileClipboard.cut = false
+                        status = "Copied ${item.name}. Open another folder and tap Paste."
+                        actionItem = null
+                    },
+                )
+                Spacer(Modifier.height(8.dp))
+                SecondaryButton(
+                    text = "Cut / move",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        FileClipboard.path = item.path
+                        FileClipboard.cut = true
+                        status = "Cut ${item.name}. Open the destination and tap Move here."
+                        actionItem = null
+                    },
+                )
+                Spacer(Modifier.height(8.dp))
+                SecondaryButton(
+                    text = "Rename",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        inputName = item.name
+                        renameItem = item
+                        actionItem = null
+                    },
+                )
+                Spacer(Modifier.height(8.dp))
+                SecondaryButton(
+                    text = "Delete",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        deleteItem = item
+                        actionItem = null
+                    },
+                )
+            }
+        }
+    }
+
+    if (showNewFolder) {
+        Dialog(onDismissRequest = { showNewFolder = false }) {
+            GlassCard(glow = CronosCyan) {
+                Text("New folder", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = inputName,
+                    onValueChange = { inputName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Folder name", color = TextSecondary) },
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SecondaryButton(
+                        text = "Cancel",
+                        modifier = Modifier.weight(1f),
+                        onClick = { showNewFolder = false },
+                    )
+                    PrimaryButton(
+                        text = "Create",
+                        modifier = Modifier.weight(1f),
+                        enabled = inputName.isNotBlank(),
+                        onClick = {
+                            FileOperations.createFolder(File(current), inputName.trim())
+                                .onSuccess { status = "Created ${it.name}" }
+                                .onFailure { status = it.message }
+                            showNewFolder = false
+                            load(current)
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    renameItem?.let { item ->
+        Dialog(onDismissRequest = { renameItem = null }) {
+            GlassCard(glow = CronosCyan) {
+                Text("Rename", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = inputName,
+                    onValueChange = { inputName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("New name", color = TextSecondary) },
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SecondaryButton(
+                        text = "Cancel",
+                        modifier = Modifier.weight(1f),
+                        onClick = { renameItem = null },
+                    )
+                    PrimaryButton(
+                        text = "Rename",
+                        modifier = Modifier.weight(1f),
+                        enabled = inputName.isNotBlank(),
+                        onClick = {
+                            FileOperations.rename(File(item.path), inputName.trim())
+                                .onSuccess { status = "Renamed to ${it.name}" }
+                                .onFailure { status = it.message }
+                            renameItem = null
+                            load(current)
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    deleteItem?.let { item ->
+        Dialog(onDismissRequest = { deleteItem = null }) {
+            GlassCard(glow = Warning) {
+                Text("Delete?", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = if (item.directory) {
+                        "The folder and everything inside it will be deleted permanently."
+                    } else {
+                        "The file will be deleted permanently."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SecondaryButton(
+                        text = "Cancel",
+                        modifier = Modifier.weight(1f),
+                        onClick = { deleteItem = null },
+                    )
+                    PrimaryButton(
+                        text = "Delete",
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            FileOperations.delete(File(item.path))
+                                .onSuccess { status = "Deleted ${item.name}" }
+                                .onFailure { status = it.message }
+                            deleteItem = null
+                            load(current)
+                        },
+                    )
                 }
             }
         }
@@ -240,5 +488,3 @@ fun managerRoots(context: android.content.Context): List<Pair<String, String>> {
     context.cacheDir?.let { list.add("App cache" to it.absolutePath) }
     return list.distinctBy { it.second }
 }
-
-import androidx.compose.foundation.BorderStroke
