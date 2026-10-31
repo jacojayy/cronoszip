@@ -50,7 +50,6 @@ import com.cronoszip.app.ui.screens.FileBrowserScreen
 import com.cronoszip.app.ui.screens.HomeScreen
 import com.cronoszip.app.ui.screens.SettingsScreen
 import com.cronoszip.app.ui.screens.FileManagerScreen
-import com.cronoszip.app.ui.screens.DualPaneFileManagerScreen
 import com.cronoszip.app.ui.screens.UpdaterScreen
 import com.cronoszip.app.ui.theme.CronosBlue
 import com.cronoszip.app.ui.theme.CronosCyan
@@ -68,7 +67,6 @@ private object Routes {
     const val Details = "details"
     const val Settings = "settings"
     const val Files = "files"
-    const val Dual = "dual"
     const val Update = "update"
     fun browser(mode: BrowserMode) = "browser/${mode.name}"
 }
@@ -133,6 +131,7 @@ fun CronosApp(viewModel: CronosViewModel = viewModel()) {
                     },
                     onOpenHistory = { path -> viewModel.checkArchive(path) },
                     onSettings = { nav.navigate(Routes.Settings) },
+                    onOpenFiles = { nav.navigate(Routes.Files) },
                 )
             }
 
@@ -191,21 +190,12 @@ fun CronosApp(viewModel: CronosViewModel = viewModel()) {
                     viewModel = viewModel,
                     onBack = { nav.popBackStack() },
                     onOpenFiles = { nav.navigate(Routes.Files) },
-                    onOpenDual = { nav.navigate(Routes.Dual) },
                     onOpenUpdate = { nav.navigate(Routes.Update) },
                 )
             }
 
             composable(Routes.Files) {
                 FileManagerScreen(
-                    viewModel = viewModel,
-                    onBack = { nav.popBackStack() },
-                    onOpenArchive = { viewModel.checkArchive(it) },
-                )
-            }
-
-            composable(Routes.Dual) {
-                DualPaneFileManagerScreen(
                     viewModel = viewModel,
                     onBack = { nav.popBackStack() },
                     onOpenArchive = { viewModel.checkArchive(it) },

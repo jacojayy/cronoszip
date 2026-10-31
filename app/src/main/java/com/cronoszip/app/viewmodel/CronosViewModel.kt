@@ -108,6 +108,25 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
     val appVersionCode: Long
         get() = updateRepository.currentVersion().second
 
+    init {
+        // Check for a newer release every time the app process opens.
+        checkForUpdates()
+    }
+
+    fun addStorageRoot(label: String, path: String) {
+        val clean = path.trim().trimEnd('/')
+        if (clean.isBlank()) return
+        if (settings.customRoots.any { it.path == clean }) return
+        val name = label.trim().ifBlank { File(clean).name.ifBlank { clean } }
+        updateSettings(settings.copy(customRoots = settings.customRoots + StorageRoot(name, clean)))
+    }
+
+    fun removeStorageRoot(path: String) {
+        updateSettings(
+            settings.copy(customRoots = settings.customRoots.filterNot { it.path == path }),
+        )
+    }
+
     fun checkArchive(path: String, password: String? = null) {
         lastPassword = password
         pendingCheck = null

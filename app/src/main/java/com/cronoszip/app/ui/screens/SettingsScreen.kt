@@ -31,7 +31,6 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VerifiedUser
-import androidx.compose.material.icons.rounded.ViewColumn
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material3.Icon
@@ -90,7 +89,6 @@ fun SettingsScreen(
     viewModel: CronosViewModel,
     onBack: () -> Unit,
     onOpenFiles: () -> Unit = {},
-    onOpenDual: () -> Unit = {},
     onOpenUpdate: () -> Unit = {},
 ) {
     val settings = viewModel.settings
@@ -222,25 +220,8 @@ fun SettingsScreen(
                         Icon(Icons.Rounded.Folder, contentDescription = null, tint = CronosCyan, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Full file manager", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                            Text("Browse, open archives, access app storage and external storage", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                        }
-                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = TextSecondary)
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable(onClick = onOpenDual)
-                            .background(GlassWhite.copy(alpha = 0.035f))
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Rounded.ViewColumn, contentDescription = null, tint = CronosBlue, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Dual panel side view", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                            Text("Two independent panes with shared storage and app storage roots", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            Text("Files", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                            Text("One file manager with list and split view, plus app storage shortcuts", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                         }
                         Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, tint = TextSecondary)
                     }

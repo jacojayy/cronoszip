@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SpaceDashboard
@@ -47,6 +48,7 @@ import com.cronoszip.app.data.HistoryEntry
 import com.cronoszip.app.ui.components.GlassCard
 import com.cronoszip.app.ui.components.GlassChip
 import com.cronoszip.app.ui.components.PrimaryButton
+import com.cronoszip.app.ui.components.SecondaryButton
 import com.cronoszip.app.ui.components.SectionLabel
 import com.cronoszip.app.ui.components.StatusPill
 import com.cronoszip.app.ui.components.Wordmark
@@ -68,6 +70,7 @@ fun HomeScreen(
     onGetStarted: () -> Unit,
     onOpenHistory: (String) -> Unit,
     onSettings: () -> Unit,
+    onOpenFiles: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
@@ -107,12 +110,12 @@ fun HomeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "Extract huge archives. In place.",
+                    text = "Extract huge archives. Manage every file.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = TextSecondary,
                 )
                 Text(
-                    text = "Built for phones that are almost full",
+                    text = "One local app for extraction and file management",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary.copy(alpha = 0.72f),
                 )
@@ -151,10 +154,17 @@ fun HomeScreen(
                 }
                 Spacer(Modifier.height(20.dp))
                 PrimaryButton(
-                    text = "Get started",
+                    text = "Extract an archive",
                     icon = Icons.AutoMirrored.Rounded.ArrowForward,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onGetStarted,
+                )
+                Spacer(Modifier.height(8.dp))
+                SecondaryButton(
+                    text = "Open files",
+                    icon = Icons.Rounded.Folder,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onOpenFiles,
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -193,6 +203,45 @@ fun HomeScreen(
                 color = Warning,
                 horizontal = true,
             )
+        }
+
+        item {
+            SectionLabel(text = "Files & storage")
+        }
+
+        item {
+            GlassCard(glow = CronosBlue.copy(alpha = 0.7f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FeatureIcon(icon = Icons.Rounded.Folder, color = CronosCyan)
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "One file manager",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextPrimary,
+                        )
+                        Text(
+                            text = "List and split view in the same screen",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Browse internal, external and app storage. Add your own local folders, " +
+                        "then move, rename, delete or open archives without leaving CronosZip.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                )
+                Spacer(Modifier.height(14.dp))
+                SecondaryButton(
+                    text = "Open files",
+                    icon = Icons.Rounded.Folder,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onOpenFiles,
+                )
+            }
         }
 
         item {
@@ -238,7 +287,7 @@ fun HomeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "CronosZip is a port of HatchZip",
+                    text = "CronosZip · local extraction and file management",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary.copy(alpha = 0.65f),
                 )
