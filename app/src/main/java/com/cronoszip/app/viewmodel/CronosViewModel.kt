@@ -32,6 +32,8 @@ import com.cronoszip.app.data.HistoryEntry
 import com.cronoszip.app.data.HistoryStore
 import com.cronoszip.app.data.NativeEvent
 import com.cronoszip.app.data.PasswordRequest
+import com.cronoszip.app.data.PinnedLocation
+import com.cronoszip.app.data.PinnedStorage
 import com.cronoszip.app.data.RestoreConfig
 import com.cronoszip.app.data.SettingsStore
 import com.cronoszip.app.data.SetupOptions
@@ -64,6 +66,9 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
         private set
 
     var history by mutableStateOf(historyStore.load())
+        private set
+
+    var pinned by mutableStateOf(PinnedStorage.list(application))
         private set
 
     var isChecking by mutableStateOf(false)
@@ -116,18 +121,33 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
         checkForUpdates()
     }
 
-    fun addStorageRoot(label: String, path: String) {
-        val clean = path.trim().trimEnd('/')
-        if (clean.isBlank()) return
-        if (settings.customRoots.any { it.path == clean }) return
-        val name = label.trim().ifBlank { File(clean).name.ifBlank { clean } }
-        updateSettings(settings.copy(customRoots = settings.customRoots + StorageRoot(name, clean)))
+    fun addPinnedTree(label: String, treeUri: Uri, packageName: String?): String? {
+        val path = PinnedStorage.resolveTreePath(treeUri)
+            ?: return "That storage app can only be browsed through Android's document picker, which CronosZip does not support yet. Pick a folder on device storage instead."
+        if (!File(path).canRead()) {
+            return "CronosZip cannot read $path. Grant all-files access and try again."
+        }
+        val name = label.trim().ifBlank { File(path).name.ifBlank { "Storage" } }
+        PinnedStorage.add(getApplication(), name, treeUri, packageName)
+        refreshPinned()
+        return null
     }
 
-    fun removeStorageRoot(path: String) {
-        updateSettings(
-            settings.copy(customRoots = settings.customRoots.filterNot { it.path == path }),
-        )
+    fun addPinnedPath(label: String, path: String, packageName: String? = null) {
+        val clean = path.trim().trimEnd('/')
+        if (clean.isBlank()) return
+        val name = label.trim().ifBlank { File(clean).name.ifBlank { clean } }
+        PinnedStorage.addRoot(getApplication(), name, clean, packageName)
+        refreshPinned()
+    }
+
+    fun removePinned(item: PinnedLocation) {
+        PinnedStorage.remove(getApplication(), item)
+        refreshPinned()
+    }
+
+    private fun refreshPinned() {
+        pinned = PinnedStorage.list(getApplication())
     }
 
     fun checkArchive(path: String, password: String? = null) {

@@ -1,6 +1,7 @@
 package com.cronoszip.app.ui.screens
 
 import android.Manifest
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,10 +62,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.cronoszip.app.data.DocumentsProviderApps
 import com.cronoszip.app.data.FileClipboard
 import com.cronoszip.app.data.FileItem
 import com.cronoszip.app.data.FileOperations
-import com.cronoszip.app.data.StorageRoot
+import com.cronoszip.app.data.PinnedLocation
+import com.cronoszip.app.data.PinnedStorage
 import com.cronoszip.app.ui.components.GlassCard
 import com.cronoszip.app.ui.components.GlassChip
 import com.cronoszip.app.ui.components.PrimaryButton
@@ -93,8 +96,8 @@ fun FileManagerScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var granted by remember { mutableStateOf(hasStorageAccess(context)) }
-    val customRoots = viewModel.settings.customRoots
-    val roots = remember(context, customRoots) { managerRoots(context, customRoots) }
+    val pinned = viewModel.pinned
+    val roots = remember(context, pinned) { managerRoots(context, pinned) }
     var split by remember { mutableStateOf(false) }
     var showStorage by remember { mutableStateOf(false) }
 
@@ -159,10 +162,11 @@ fun FileManagerScreen(
     }
 
     if (showStorage) {
-        StorageDialog(
-            customRoots = customRoots,
-            onAdd = { label, path -> viewModel.addStorageRoot(label, path) },
-            onRemove = { viewModel.removeStorageRoot(it) },
+        AddStorageDialog(
+            pinned = pinned,
+            onAddTree = { label, uri, pkg -> viewModel.addPinnedTree(label, uri, pkg) },
+            onAddPath = { label, path -> viewModel.addPinnedPath(label, path) },
+            onRemove = { viewModel.removePinned(it) },
             onDismiss = { showStorage = false },
         )
     }
@@ -667,92 +671,126 @@ private fun Pane(
 }
 
 @Composable
-private fun StorageDialog(
-    customRoots: List<StorageRoot>,
-    onAdd: (String, String) -> Unit,
-    onRemove: (String) -> Unit,
+private fun AddStorageDialog(
+    pinned: List<PinnedLocation>,
+    onAddTree: (String, Uri, String?) -> String?,
+    onAddPath: (String, String) -> Unit,
+    onRemove: (PinnedLocation) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    var label by remember { mutableStateOf("") }
-    var path by remember { mutableStateOf("") }
+    val providers = remember(context) { DocumentsProviderApps.list(context) }
+    var pendingLabel by remember { mutableStateOf("Storage") }
+    var pendingPackage by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    val treeLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) {
+            error = onAddTree(pendingLabel, uri, pendingPackage)
+        }
+    }
+
+    fun pick(label: String, packageName: String?, authority: String?) {
+        pendingLabel = label
+        pendingPackage = packageName
+        error = null
+        treeLauncher.launch(authority?.let { DocumentsProviderApps.initialTreeUri(context, it) })
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         GlassCard(glow = CronosCyan) {
-            Text("Storage locations", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+            Text("Add app storage", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "Add any local folder, including CronosZip app storage, as a shortcut in the file manager.",
+                text = "Pick an app that provides storage, or choose any folder. Android asks you to confirm " +
+                    "the folder once and CronosZip keeps that access.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
             )
-            if (customRoots.isNotEmpty()) {
+
+            if (pinned.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
-                customRoots.forEach { root ->
+                pinned.forEach { pin ->
+                    val shownPath = if (pin.isRoot) pin.path else pin.treeUri?.let { PinnedStorage.resolveTreePath(it) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(root.label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(root.path, style = MaterialTheme.typography.labelSmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(pin.label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(shownPath ?: pin.treeUri?.toString().orEmpty(), style = MaterialTheme.typography.labelSmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        IconButton(onClick = { onRemove(root.path) }) {
-                            Icon(Icons.Rounded.DeleteOutline, contentDescription = "Remove ${root.label}", tint = Warning, modifier = Modifier.size(18.dp))
+                        IconButton(onClick = { onRemove(pin) }) {
+                            Icon(Icons.Rounded.DeleteOutline, contentDescription = "Remove ${pin.label}", tint = Warning, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             }
-            Spacer(Modifier.height(14.dp))
-            OutlinedTextField(
-                value = label,
-                onValueChange = { label = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Name (optional)", color = TextSecondary) },
-                singleLine = true,
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = path,
-                onValueChange = { path = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Folder path", color = TextSecondary) },
-                singleLine = true,
-            )
-            Spacer(Modifier.height(8.dp))
-            SecondaryButton(
-                text = "Use app storage",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    label = "App storage"
-                    path = context.filesDir?.absolutePath.orEmpty()
-                },
-            )
-            Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SecondaryButton(
-                    text = "Done",
-                    modifier = Modifier.weight(1f),
-                    onClick = onDismiss,
-                )
-                PrimaryButton(
-                    text = "Add",
-                    modifier = Modifier.weight(1f),
-                    enabled = path.isNotBlank(),
-                    onClick = {
-                        onAdd(label, path)
-                        label = ""
-                        path = ""
-                    },
-                )
+
+            error?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall, color = Warning)
             }
+
+            Spacer(Modifier.height(14.dp))
+            Text("Storage apps", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+            Spacer(Modifier.height(4.dp))
+            if (providers.isEmpty()) {
+                Text("No storage apps found. Use Choose a folder instead.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            }
+            providers.take(8).forEach { provider ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { pick(provider.label, provider.packageName, provider.authority) }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Storage, contentDescription = null, tint = CronosCyan, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(provider.label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(provider.packageName, style = MaterialTheme.typography.labelSmall, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(16.dp))
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { pick("Storage", null, null) }.padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = CronosCyan, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Choose a folder…", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable {
+                    onAddPath("App storage", context.filesDir.absolutePath)
+                }.padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.Folder, contentDescription = null, tint = CronosCyan, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Add CronosZip app storage", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            }
+
+            Spacer(Modifier.height(14.dp))
+            SecondaryButton(
+                text = "Done",
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onDismiss,
+            )
         }
     }
 }
 
 fun managerRoots(
     context: android.content.Context,
-    customRoots: List<StorageRoot> = emptyList(),
+    pinned: List<PinnedLocation> = emptyList(),
 ): List<Pair<String, String>> {
     val list = mutableListOf<Pair<String, String>>()
-    customRoots.forEach { list.add(it.label to it.path) }
+    pinned.forEach { pin ->
+        val path = if (pin.isRoot) pin.path else pin.treeUri?.let { PinnedStorage.resolveTreePath(it) }
+        if (!path.isNullOrBlank() && File(path).canRead()) list.add(pin.label to path)
+    }
     val external = android.os.Environment.getExternalStorageDirectory()
     external?.let { list.add("Internal" to it.absolutePath) }
     val download = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)

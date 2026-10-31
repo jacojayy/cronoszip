@@ -203,43 +203,55 @@ jobs:
           APK_SIZE: ${{ steps.assets.outputs.size_human }}
           APK_SIZE_BYTES: ${{ steps.assets.outputs.size_bytes }}
           APK_SHA256: ${{ steps.assets.outputs.sha256 }}
+          VERSION_CODE: ${{ steps.assets.outputs.version_code }}
         run: |
           set -euo pipefail
 
+          MODE=generated
           if [ -n "${INPUT_NOTES//[[:space:]]/}" ]; then
             printf '%s\n' "$INPUT_NOTES" > release-notes.md
-            echo "mode=custom" >> "$GITHUB_OUTPUT"
-            echo "Using custom release notes."
+            MODE=custom
+            echo "Using custom release notes from the workflow input."
+          elif [ -f ".github/release-notes-${TAG}.md" ]; then
+            cp ".github/release-notes-${TAG}.md" release-notes.md
+            MODE=custom
+            echo "Using .github/release-notes-${TAG}.md."
           elif [ "$FIRST_RELEASE" = "true" ]; then
+            cp .github/release-notes-first.md release-notes.md
+            MODE=custom
+            echo "Using detailed first-release notes."
+          else
+            echo "Using GitHub-generated release notes."
+          fi
+
+          if [ -f release-notes.md ]; then
             python3 - <<'PY'
           import os
           from pathlib import Path
 
-          text = Path(".github/release-notes-first.md").read_text(encoding="utf-8")
+          text = Path("release-notes.md").read_text(encoding="utf-8")
           values = {
-              "{{TAG}}": os.environ["TAG"],
-              "{{TITLE}}": os.environ["TITLE"],
-              "{{REPO}}": os.environ["GITHUB_REPOSITORY"],
-              "{{SHA}}": os.environ["SHA"],
-              "{{SHORT_SHA}}": os.environ["SHA"][:7],
-              "{{RUN_ID}}": os.environ["RUN_ID"],
-              "{{RUN_URL}}": os.environ["RUN_URL"],
-              "{{BUILD_DATE}}": os.environ["BUILD_DATE"],
-              "{{ASSET}}": os.environ["ASSET"],
-              "{{APK_SIZE}}": os.environ["APK_SIZE"],
-              "{{APK_SIZE_BYTES}}": os.environ["APK_SIZE_BYTES"],
-              "{{APK_SHA256}}": os.environ["APK_SHA256"],
+              "{{TAG}}": os.environ.get("TAG", ""),
+              "{{TITLE}}": os.environ.get("TITLE", ""),
+              "{{REPO}}": os.environ.get("GITHUB_REPOSITORY", ""),
+              "{{SHA}}": os.environ.get("SHA", ""),
+              "{{SHORT_SHA}}": os.environ.get("SHA", "")[:7],
+              "{{RUN_ID}}": os.environ.get("RUN_ID", ""),
+              "{{RUN_URL}}": os.environ.get("RUN_URL", ""),
+              "{{BUILD_DATE}}": os.environ.get("BUILD_DATE", ""),
+              "{{ASSET}}": os.environ.get("ASSET", ""),
+              "{{APK_SIZE}}": os.environ.get("APK_SIZE", ""),
+              "{{APK_SIZE_BYTES}}": os.environ.get("APK_SIZE_BYTES", ""),
+              "{{APK_SHA256}}": os.environ.get("APK_SHA256", ""),
+              "{{VERSION_CODE}}": os.environ.get("VERSION_CODE", ""),
           }
           for token, value in values.items():
               text = text.replace(token, value)
           Path("release-notes.md").write_text(text, encoding="utf-8")
           PY
-            echo "mode=first" >> "$GITHUB_OUTPUT"
-            echo "Using detailed first-release notes."
-          else
-            echo "mode=generated" >> "$GITHUB_OUTPUT"
-            echo "Using GitHub-generated release notes."
           fi
+
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
 
           echo "### Release notes preview" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
