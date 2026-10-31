@@ -604,7 +604,7 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
                         _update.value = _update.value.copy(checking = false, error = "Could not check for updates.")
                     } else {
                         val hasUpdate = info.tagName.isNotBlank() && info.apkUrl.isNotBlank() &&
-                            isNewerVersion(info.versionName, appVersionName)
+                            isNewerVersion(info.versionName, appVersion)
                         _update.value = _update.value.copy(
                             checking = false,
                             update = info,
@@ -613,7 +613,7 @@ class CronosViewModel(application: Application) : AndroidViewModel(application) 
                             message = if (hasUpdate) {
                                 "Latest: ${info.tagName}. Download to verify and install."
                             } else {
-                                "You are on the latest version (${appVersionName})."
+                                "You are on the latest version (${appVersion})."
                             },
                         )
                     }
