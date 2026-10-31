@@ -4,14 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v1.0.0"
+        description: "Release tag, for example v1.2.3"
         required: true
-        default: "v1.0.0"
+        default: "v1.2.3"
         type: string
       title:
         description: "Release title"
         required: true
-        default: "CronosZip v1.0.0"
+        default: "CronosZip v1.2.3"
         type: string
       run_id:
         description: "Build run ID to release (blank = latest successful Build APK run on main)"
@@ -19,7 +19,7 @@ on:
         default: ""
         type: string
       notes:
-        description: "Custom release notes (blank = detailed first-release notes, or auto-generated notes after that)"
+        description: "Custom release notes (blank = .github/release-notes-<tag>.md, then detailed first-release notes, then auto-generated notes)"
         required: false
         default: ""
         type: string
@@ -157,6 +157,12 @@ jobs:
           print(data["elements"][0]["versionCode"])
           PY
           )
+          VERSION_NAME=$(python3 - "$META" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          print(data["elements"][0].get("versionName", ""))
+          PY
+          )
           printf '%s\n' "$VERSION_CODE" > version.txt
 
           SIZE_BYTES=$(stat -c '%s' "$ASSET")
@@ -167,12 +173,13 @@ jobs:
             echo "safe_tag=$SAFE_TAG"
             echo "asset=$ASSET"
             echo "version_code=$VERSION_CODE"
+            echo "version_name=$VERSION_NAME"
             echo "size_bytes=$SIZE_BYTES"
             echo "size_human=$SIZE_HUMAN"
             echo "sha256=$SHA256"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Prepared $ASSET (versionCode $VERSION_CODE, $SIZE_HUMAN, sha256 $SHA256)"
+          echo "Prepared $ASSET (versionName $VERSION_NAME, versionCode $VERSION_CODE, $SIZE_HUMAN, sha256 $SHA256)"
 
       - name: Detect first release
         id: first
@@ -204,6 +211,7 @@ jobs:
           APK_SIZE_BYTES: ${{ steps.assets.outputs.size_bytes }}
           APK_SHA256: ${{ steps.assets.outputs.sha256 }}
           VERSION_CODE: ${{ steps.assets.outputs.version_code }}
+          VERSION_NAME: ${{ steps.assets.outputs.version_name }}
         run: |
           set -euo pipefail
 
@@ -244,6 +252,7 @@ jobs:
               "{{APK_SIZE_BYTES}}": os.environ.get("APK_SIZE_BYTES", ""),
               "{{APK_SHA256}}": os.environ.get("APK_SHA256", ""),
               "{{VERSION_CODE}}": os.environ.get("VERSION_CODE", ""),
+              "{{VERSION_NAME}}": os.environ.get("VERSION_NAME", ""),
           }
           for token, value in values.items():
               text = text.replace(token, value)
