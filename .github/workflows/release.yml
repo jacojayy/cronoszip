@@ -69,8 +69,7 @@ jobs:
             RUN_ID=$(gh run list \
               --workflow=build.yml \
               --branch=main \
-              --status=completed \
-              --conclusion=success \
+              --status=success \
               --limit=1 \
               --json=databaseId \
               --jq='.[0].databaseId // empty')
