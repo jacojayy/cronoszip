@@ -1,5 +1,12 @@
 package com.cronoszip.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +26,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,30 +34,40 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.cronoszip.app.data.AppPrefs
 import com.cronoszip.app.data.BrowserMode
 import com.cronoszip.app.data.CheckData
 import com.cronoszip.app.data.UiEffect
+import com.cronoszip.app.service.ExtractionNotifications
+import com.cronoszip.app.service.ExtractionService
+import com.cronoszip.app.service.etaText
 import com.cronoszip.app.ui.background.LiquidBackground
 import com.cronoszip.app.ui.components.CheckingOverlay
-import com.cronoszip.app.ui.components.GlassCard
 import com.cronoszip.app.ui.components.PlanBar
 import com.cronoszip.app.ui.components.PrimaryButton
 import com.cronoszip.app.ui.components.SecondaryButton
+import com.cronoszip.app.ui.components.SolidDialogCard
 import com.cronoszip.app.ui.screens.ArchiveDetailsScreen
+import com.cronoszip.app.ui.screens.ArchiveViewerScreen
 import com.cronoszip.app.ui.screens.ExtractSetupScreen
 import com.cronoszip.app.ui.screens.ExtractingScreen
 import com.cronoszip.app.ui.screens.FileBrowserScreen
+import com.cronoszip.app.ui.screens.FileManagerScreen
 import com.cronoszip.app.ui.screens.HomeScreen
 import com.cronoszip.app.ui.screens.SettingsScreen
-import com.cronoszip.app.ui.screens.FileManagerScreen
 import com.cronoszip.app.ui.screens.UpdaterScreen
 import com.cronoszip.app.ui.theme.CronosBlue
 import com.cronoszip.app.ui.theme.CronosCyan
@@ -68,11 +86,23 @@ private object Routes {
     const val Settings = "settings"
     const val Files = "files"
     const val Update = "update"
+    const val ArchivePattern = "archive/{path}"
     fun browser(mode: BrowserMode) = "browser/${mode.name}"
+    fun archiveView(path: String) = "archive/${Uri.encode(path)}"
 }
 
 @Composable
 fun CronosApp(viewModel: CronosViewModel = viewModel()) {
+    val appContext = LocalContext.current
+    remember { AppPrefs.load(appContext) }
+
+    val extraction by viewModel.extraction.collectAsState()
+    var wasRunning by remember { mutableStateOf(false) }
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+    val percentNow = (extraction.fraction.coerceIn(0f, 1f) * 100f).toInt()
+
     val nav = rememberNavController()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -82,10 +112,50 @@ fun CronosApp(viewModel: CronosViewModel = viewModel()) {
     var password by remember { mutableStateOf("") }
     var noSpaceCheck by remember { mutableStateOf<CheckData?>(null) }
 
+    // The archive screen runs its own check and extraction, so those must not jump to the old screens.
+    val onArchiveScreen = { nav.currentBackStackEntry?.destination?.route?.startsWith("archive/") == true }
+
+    // Keeps the screen awake while an extraction runs, so the screen timeout cannot interrupt it.
+    KeepScreenOn(active = extraction.running)
+
+    // Starts the background service when an extraction starts, and posts a completion notice when it ends.
+    LaunchedEffect(extraction.running) {
+        if (extraction.running) {
+            wasRunning = true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            runCatching { ExtractionService.start(appContext) }
+        } else if (wasRunning) {
+            wasRunning = false
+            runCatching { ExtractionService.stop(appContext) }
+            when {
+                extraction.success -> ExtractionNotifications.finished(appContext, "Extraction complete", extraction.output)
+                extraction.paused -> ExtractionNotifications.finished(appContext, "Extraction paused", "Open the app to resume.")
+                extraction.errorMessage != null ->
+                    ExtractionNotifications.finished(appContext, "Extraction stopped", extraction.errorMessage.orEmpty())
+            }
+        }
+    }
+
+    // Updates the progress bar and time left in the notification while the extraction runs.
+    LaunchedEffect(percentNow, extraction.running) {
+        if (extraction.running) {
+            ExtractionNotifications.update(
+                appContext,
+                percent = percentNow,
+                text = "$percentNow% · ${etaText(extraction.done, extraction.total, extraction.speed)}",
+            )
+        }
+    }
+
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                is UiEffect.OpenSetup -> {
+                is UiEffect.OpenSetup -> if (!onArchiveScreen()) {
                     nav.navigate(Routes.Setup) { launchSingleTop = true }
                 }
                 is UiEffect.NoSpace -> {
@@ -99,14 +169,14 @@ fun CronosApp(viewModel: CronosViewModel = viewModel()) {
                 is UiEffect.Message -> {
                     scope.launch { snackbar.showSnackbar(effect.text) }
                 }
-                is UiEffect.ExtractionStarted -> {
+                is UiEffect.ExtractionStarted -> if (!onArchiveScreen()) {
                     nav.navigate(Routes.Extract) { launchSingleTop = true }
                 }
                 is UiEffect.RestoreCompleted -> {
                     viewModel.resetExtraction()
                     scope.launch { snackbar.showSnackbar(effect.message) }
-                    nav.navigate(Routes.Home) {
-                        popUpTo(Routes.Home) { inclusive = false }
+                    nav.navigate(Routes.Files) {
+                        popUpTo(Routes.Files) { inclusive = false }
                         launchSingleTop = true
                     }
                 }
@@ -115,13 +185,46 @@ fun CronosApp(viewModel: CronosViewModel = viewModel()) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        LiquidBackground(animate = viewModel.settings.animations)
+        // AMOLED mode swaps the blue animated background for solid black. Everything else keeps its look.
+        if (AppPrefs.amoled) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black))
+        } else {
+            LiquidBackground(animate = viewModel.settings.animations)
+        }
 
         NavHost(
             navController = nav,
-            startDestination = Routes.Home,
+            startDestination = Routes.Files,
             modifier = Modifier.fillMaxSize(),
         ) {
+            composable(Routes.Files) {
+                FileManagerScreen(
+                    viewModel = viewModel,
+                    onBack = null,
+                    onOpenArchive = { nav.navigate(Routes.archiveView(it)) },
+                    onExtract = { nav.navigate(Routes.browser(BrowserMode.Archive)) },
+                    onSettings = { nav.navigate(Routes.Settings) },
+                )
+            }
+
+            composable(
+                route = Routes.ArchivePattern,
+                arguments = listOf(navArgument("path") { type = NavType.StringType }),
+            ) { entry ->
+                ArchiveViewerScreen(
+                    viewModel = viewModel,
+                    path = entry.arguments?.getString("path").orEmpty(),
+                    onBack = { nav.popBackStack() },
+                    onChooseFolder = { nav.navigate(Routes.browser(BrowserMode.Folder)) },
+                    onDone = {
+                        nav.navigate(Routes.Files) {
+                            popUpTo(Routes.Files) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    },
+                )
+            }
+
             composable(Routes.Home) {
                 HomeScreen(
                     viewModel = viewModel,
@@ -169,8 +272,8 @@ fun CronosApp(viewModel: CronosViewModel = viewModel()) {
                 ExtractingScreen(
                     viewModel = viewModel,
                     onDone = {
-                        nav.navigate(Routes.Home) {
-                            popUpTo(Routes.Home) { inclusive = false }
+                        nav.navigate(Routes.Files) {
+                            popUpTo(Routes.Files) { inclusive = false }
                             launchSingleTop = true
                         }
                     },
@@ -191,14 +294,6 @@ fun CronosApp(viewModel: CronosViewModel = viewModel()) {
                     onBack = { nav.popBackStack() },
                     onOpenFiles = { nav.navigate(Routes.Files) },
                     onOpenUpdate = { nav.navigate(Routes.Update) },
-                )
-            }
-
-            composable(Routes.Files) {
-                FileManagerScreen(
-                    viewModel = viewModel,
-                    onBack = { nav.popBackStack() },
-                    onOpenArchive = { viewModel.checkArchive(it) },
                 )
             }
 
@@ -230,7 +325,7 @@ fun CronosApp(viewModel: CronosViewModel = viewModel()) {
                 viewModel.cancelPassword()
             },
         ) {
-            GlassCard(glow = CronosBlue) {
+            SolidDialogCard(glow = CronosBlue) {
                 Text(
                     text = "Archive password",
                     style = MaterialTheme.typography.headlineSmall,
@@ -284,7 +379,7 @@ fun CronosApp(viewModel: CronosViewModel = viewModel()) {
 
     noSpaceCheck?.let { check ->
         Dialog(onDismissRequest = { noSpaceCheck = null }) {
-            GlassCard(glow = Danger) {
+            SolidDialogCard(glow = Danger) {
                 Text(
                     text = "Not enough room",
                     style = MaterialTheme.typography.headlineSmall,
@@ -293,7 +388,7 @@ fun CronosApp(viewModel: CronosViewModel = viewModel()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = "The engine proved the plan before changing anything. " +
-                        "CronosZip will not start this extraction yet.",
+                        "Chronos Manager will not start this extraction yet.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                 )
